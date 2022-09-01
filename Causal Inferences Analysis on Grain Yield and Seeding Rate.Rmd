@@ -1,0 +1,327 @@
+---
+title: "Causal Inferences on Grain Yield and Seeding Rate for Corn and Soybeans"
+author: "Vivek Patel"
+date: "2022-08-05"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F, cache = F, fig.height = 10, fig.width = 10,fig.align="center")
+
+```
+
+
+## 1. Abstract
+
+Many statistical research endeavors, whether observational or interventional, have as an objective the identification or quantification of causal relationships. In healthcare statistical research, one might as, does stress, influence weight gain; or how does breastfeeding affect later cognitive outcomes and abilities. In agriculture, we might to seek to establish whether the rate of fertilizer or manure application affects yield in subsequent years. In this project, we employ the use of Directed Acycilic Graphs (DAGs) to investigate causal relationships between yield and seeding rate for corn and soybeans rotated on a field over 2017, 2018, 2019 and 2020. DAGs are a graphical tool which provide a way to visually represent and better understand the key concepts of exposure, outcome, causation, confounding, and bias.
+
+## 2. Introduction
+
+We will draw causal linkages from this data in this study to evaluate if there are any causal relationships between historical grain yield, current grain yield, and planting rate. Field yield and seeding rate data from the years 2017, 2018, 2019, and 2020 will be used broadly. For the corn and soybean varieties that were cycled through the field over the years, this information contains yield and seeding rate details. I'll investigate whether a field's low producing circumstances were brought on by a reduced seeding rate or by the area's generally unfavorable characteristics. I'll also look into if the yield in one year has any bearing on the yield in subsequent years.
+
+## 3. Load and Examine the data
+
+```{r Data}
+
+#load data into R with the read.csv 
+
+SoyH17 <- read.csv('A 2017 Soybeans Harvest.csv', header = T,stringsAsFactors = T) 
+CornS18 <- read.csv('A 2018 Corn Seeding.csv',header = T,stringsAsFactors = T)
+CornH18 <- read.csv('A 2018 Corn Harvest.csv',header = T,stringsAsFactors = T)
+SoyH19 <- read.csv('A 2019 Soybeans Harvest.csv',header = T,stringsAsFactors = T)
+CornS20 <- read.csv('A 2020 Corn Seeding.csv',header = T,stringsAsFactors = T)
+CornH20 <- read.csv('A 2020 Corn Harvest.csv',header = T,stringsAsFactors = T)
+
+```
+
+Geo data, IsoTime, **Yield in bu/acre**, swathwidth, swath, distance, heading, wetmass, and moisture are included in the harvest data. Geo data, IsoTime, **applied rate**, control rate, seed variety, distance, and heading are all included in the seeding data. While the planting data only contains 9 variables, the harvest data comprises 11 variables, including an identity variable. The seeding datasets each include about 9,000 observations, while the harvest datasets all have over 20,000 observations. The data does not contain any null values.
+
+#### 3.1. Plot data 
+
+Plot sample datasets to check whether they was correctly loaded into R
+
+```{r Plot_Data}
+
+# Plot sample datasets
+
+par(mfrow=c(1,2))
+plot(Latitude ~ Longitude,data=SoyH17,pch = ".", col="red", main="Plot from 2017 Soybeans Harvest dataset.") 
+abline(h=1:12*50,v=1:20*50,col='blue')
+plot(Latitude ~ Longitude,data=CornH18,pch = ".", col="red", main="Plot from 2018 Corn Harvest Dataset.") 
+abline(h=1:12*50,v=1:20*50,col='blue')
+
+
+```
+## 4. Algorithm
+
+I will first **grid cells** from the latitude and longitude data to represent the rows and columns of the grid respectively. I will do this using the ceiling function. I will use the grid cells as the basis for aggregation and I will **aggregate the data by mean then count of observations**. I will complete this using the aggregate function. I will filter out the grid cells with less than 30 observations.I will then **merge the datasets** into one dataset called combined.dat using the merge function. I will merge by the cell column. I will then proceed to visualize correlation between the variables to investigate the relationships between the various data columns in the combined.dat dataset. I will **plot directed acyclic graphs** using the code provided. I will then proceed to **normalize the datasets**, then **repeating the process**  of plotting the DAGs.
+
+## 5. Create grid cells:
+
+```{r Grid}
+
+# Keep dataframes in a list
+
+grain_list <- list(SoyH17,CornS18,CornH18,SoyH19,CornS20,CornH20) 
+
+#Loop through the list and calculate the gridcell number for all dataframes 
+
+for (a in 1:length(grain_list)) { 
+  grain_list[[a]]['Cell']<- 0
+  for(k in 1:nrow(grain_list[[a]]['Cell'])){
+    row<-ceiling(grain_list[[a]][['Longitude']][k]/50) 
+    column<-ceiling(grain_list[[a]][['Latitude']][k]/50) 
+    grain_list[[a]][['Cell']][k]<-(25500*row) + column 
+  }
+}
+
+# Save the list items as dataframes
+
+SoyH17 <- as.data.frame(grain_list[1])
+CornS18 <- as.data.frame(grain_list[2])
+CornH18 <- as.data.frame(grain_list[3])
+SoyH19 <- as.data.frame(grain_list[4])
+CornS20 <- as.data.frame(grain_list[5])
+CornH20 <- as.data.frame(grain_list[6])
+
+# Select only yield, applied rate and cell
+
+SoyH17<- subset(SoyH17,select = c('Yield','Cell'))
+CornS18 <- subset(CornS18,select = c('AppliedRate','Cell'))
+CornH18 <- subset(CornH18,select = c('Yield','Cell'))
+SoyH19 <- subset(SoyH19,select = c('Yield','Cell'))
+CornS20 <- subset(CornS20,select = c('AppliedRate','Cell'))
+CornH20 <- subset(CornH20,select = c('Yield','Cell'))
+
+head(SoyH17) #check head for one dataset
+
+```
+
+## 6. Select entries with count above 30 and aggregate by mean:
+
+```{r Aggregate by Count}
+
+# Aggregate by Count
+
+SoyH17_count <- aggregate(SoyH17$Cell,by=list(SoyH17$Cell), FUN=length)
+CornS18_count <- aggregate(CornS18$Cell,by=list(CornS18$Cell), FUN=length)
+CornH18_count <- aggregate(CornH18$Cell,by=list(CornH18$Cell), FUN=length)
+SoyH19_count <- aggregate(SoyH19$Cell,by=list(SoyH19$Cell), FUN=length)
+CornS20_count <- aggregate(CornS20$Cell,by=list(CornS20$Cell), FUN=length)
+CornH20_count <- aggregate(CornH20$Cell,by=list(CornH20$Cell), FUN=length)
+
+#subset the data. Collect only those with count greater than 30
+
+SoyH17_count <- subset(SoyH17_count, x>30)
+CornS18_count <- subset(CornS18_count, x>30)
+CornH18_count <- subset(CornH18_count, x>30)
+SoyH19_count <- subset(SoyH19_count, x>30)
+CornS20_count <- subset(CornS20_count, x>30)
+CornH20_count <- subset(CornH20_count, x>30)
+
+#Select only values of Cell with more than 30
+
+SoyH17 <- SoyH17[SoyH17$Cell %in% SoyH17_count $Group.1,]
+CornS18 <- CornS18[CornS18$Cell %in% CornS18_count$Group.1,]
+CornH18  <- CornH18[CornH18$Cell %in% CornH18_count$Group.1,]
+SoyH19 <- SoyH19[SoyH19$Cell %in% SoyH19_count$Group.1,]
+CornS20 <- CornS20[CornS20$Cell %in% CornS20_count$Group.1,]
+CornH20 <- CornH20[CornH20$Cell %in% CornH20_count$Group.1,]
+
+#Aggregate by Mean
+
+SoyH17 <- aggregate(SoyH17$Yield, by=list(SoyH17$Cell), FUN=mean)
+CornS18 <- aggregate(CornS18$AppliedRate, by=list(CornS18$Cell), FUN=mean)
+CornH18 <- aggregate(CornH18$Yield, by=list(CornH18$Cell), FUN=mean)
+SoyH19  <- aggregate(SoyH19$Yield, by=list(SoyH19 $Cell), FUN=mean)
+CornS20 <- aggregate(CornS20$AppliedRate, by=list(CornS20$Cell), FUN=mean)
+CornH20 <- aggregate(CornH20$Yield, by=list(CornH20$Cell), FUN=mean)
+
+# Rename the column names
+
+colnames(SoyH17)[1] <- "Cell"
+colnames(SoyH17)[2] <- "Y17"
+colnames(CornS18)[1] <- "Cell"
+colnames(CornS18)[2] <- "AR18"
+colnames(CornH18)[1] <- "Cell"
+colnames(CornH18)[2] <- "Y18"
+colnames(SoyH19)[1] <- "Cell"
+colnames(SoyH19)[2] <- "Y19"
+colnames(CornS20)[1] <- "Cell"
+colnames(CornS20)[2] <- "AR20"
+colnames(CornH20)[1] <- "Cell"
+colnames(CornH20)[2] <- "Y20"
+
+```
+
+
+## 7. Merge Datasets
+
+```{r Merge_Datasets}
+
+# merge the six datasets into one
+
+pre_dat1 <- merge(SoyH17,CornS18)
+pre_dat2 <- merge(pre_dat1,CornH18)
+pre_dat3 <- merge(pre_dat2,SoyH19)
+pre_dat4 <- merge(pre_dat3,CornS20)
+combined.dat <- merge(pre_dat4,CornH20)
+head(combined.dat)
+
+```
+## 8. Visualize the data
+
+#### 8.1. Pairs plot
+
+```{r Viz_pairs}
+
+#plot pairs
+pairs(combined.dat, col='orange')
+
+```
+
+The plot shows that there is a linear relationship between Soybeen Yield in 2019 and Corn seed applied rate in 2020.  It also shows linear relationship between corn seeding applied rate in 2018 and soybeen yield in 2017.
+
+#### 8.2. Correlation
+
+```{r Corr}
+
+library(PerformanceAnalytics)
+my_data <- combined.dat[, c(2,3,4,5,6,7)]
+chart.Correlation(my_data, histogram=TRUE, pch=19)
+
+```
+
+We can observe that there is a high positive correlation between soybean yield in 2017 and corn seeding rate in 2018.There is also a high positive correlation between soybean yield in 2019 and the corn seeding applied rate in 2020. There is very little correlation between applied rate in 2018 and yield in 2019.
+
+## 9. Directed Acyclic Graphs
+
+```{r DAG1}
+
+library(bnlearn)
+BiocManager::install("Rgraphviz")
+modela.dag <- model2network("[Y17][AR18|Y17][Y18|AR18:Y17]")
+fit1 = bn.fit(modela.dag, combined.dat[,c('Y17','AR18','Y18')])
+#fit1
+strengtha <- arc.strength(modela.dag, combined.dat[,c('Y17','AR18','Y18')])
+strength.plot(modela.dag, strengtha)
+
+```
+
+We can observe that a change in yield in 2017 could have caused a change in yield in 2018. There is a slight causal relationship between applied rate in 2018 and yield in 2018. There is a strong causal relationship between yield in 2017 and applied rate in 2018. 
+
+```{r DAG2}
+
+modelb.dag <- model2network("[Y19][AR20|Y19][Y20|AR20:Y19]")
+fit2 = bn.fit(modelb.dag, combined.dat[,c('Y19','AR20','Y20')])
+#fit2
+strengthb <- arc.strength(modelb.dag, combined.dat[,c('Y19','AR20','Y20')])
+strength.plot(modelb.dag, strengthb)
+
+```
+This DAG shows a causal relationship exists between yield in 2019 and applied rate in 2020 which in turn has a causal effect on the yield in 2020. However, there is a slight causal relationship between yield in 2019 and yield in 2020. Applied rate in 2020 has a strong causal relationship with yield in 2020. 
+
+```{r DAG3}
+
+model1.dag <- model2network("[Y17][AR18|Y17][Y18|AR18:Y17][Y19|Y17:AR18:Y18][AR20|Y19][Y20|AR20:Y19]")
+fit3 = bn.fit(model1.dag, combined.dat[,c('Y17','AR18','Y18','Y19','AR20','Y20')])
+#fit3
+strength1 <- arc.strength(model1.dag, combined.dat[,c('Y17','AR18','Y18','Y19','AR20','Y20')])
+strength.plot(model1.dag, strength1)
+
+```
+
+We can observe that there is a strong causal relationship between yield in 2017 and yield in 2018. There exists a strong relationship between yield in 2018 and yield in 2019 as well. Yield in 2019 also has a strong causal relationship with applied rate in 2020. Applied rate in 2020 also has a strong causal relationship with yield in 2020. There are weak causal relationships between yield in 2017 and yield in 2019, yield in 2019 and yield in 2020, applied rate in 2018 and yield in 2019 and applied rate in 2018 and yield in 2018. 
+
+I will proceed to normalize the data before attempting again.
+
+## 10. Min-Max Normalization
+
+Soybean and corn yields are measured in different units (60 bu/acre for soybean and 180 bu/acre for corn). This results in having data measured at completely different scales. To make them more comparable, we will need to normalize the data. I will use min-max normalization to normalize the data before repeating the creation of DAGs.
+
+```{r Normalization}
+
+# min-max normalization
+min_max_func <- function(x, na.rm = TRUE) {
+return((x- min(x)) /(max(x)-min(x))) 
+}
+standardardized <- min_max_func(combined.dat[,2:7])
+combined_normalized <- cbind(combined.dat$Cell,standardardized)
+
+# change column name to Cell
+
+colnames(combined_normalized)[1] <- "Cell"
+head(combined_normalized)
+
+```
+
+#### 10.1. Visualize Correlation for normalized data
+
+```{r Corr_viz_norm}
+
+my_data_norm <- combined_normalized[, c(2,3,4,5,6,7)]
+chart.Correlation(my_data_norm, histogram=TRUE, pch=19)
+
+```
+After normalization, we can observe that there is a high positive correlation between soybean yield in 2017 and corn seeding rate in 2018.There is also a high positive correlation between soybean yield in 2019 and the corn seeding applied rate in 2020. There is very little correlation between applied rate in 2018 and yield in 2019.
+
+#### 10.2. Pairs plot
+
+```{r Viz_pairs_norm}
+
+#plot pairs
+pairs(combined_normalized, col='orange')
+
+```
+
+After normalization, we can observe that the plot shows that there is a linear relationship between Soybeen Yield in 2019 and Corn seed applied rate in 2020.  It also shows linear relationship between corn seeding applied rate in 2018 and soybeen yield in 2017.
+
+## 11. Directed Acyclic Graphs post Normalization
+
+```{r DAG12_norm}
+
+modela.dag <- model2network("[Y17][AR18|Y17][Y18|AR18:Y17]")
+fit1 = bn.fit(modela.dag, combined_normalized[,c('Y17','AR18','Y18')])
+#fit1
+strengtha <- arc.strength(modela.dag, combined_normalized[,c('Y17','AR18','Y18')])
+strength.plot(modela.dag, strengtha)
+
+```
+We can observe that a change in yield in 2017 could have caused a change in yield in 2018. There is a slight causal relationship between applied rate in 2018 and yield in 2018. There is a strong causal relationship between yield in 2017 and applied rate in 2018. This remains after normalization.
+
+```{r DAG2_norm}
+
+modelb.dag <- model2network("[Y19][AR20|Y19][Y20|AR20:Y19]")
+fit2 = bn.fit(modelb.dag, combined_normalized[,c('Y19','AR20','Y20')])
+#fit2
+strengthb <- arc.strength(modelb.dag, combined_normalized[,c('Y19','AR20','Y20')])
+strength.plot(modelb.dag, strengthb)
+
+```
+This DAG shows a causal relationship exists between yield in 2019 and applied rate in 2020 which in turn has a causal effect on the yield in 2020. However, there is a slight causal relationship between yield in 2019 and yield in 2020. Applied rate in 2020 has a strong causal relationship with yield in 2020. This was the case before normalization.
+
+```{r DAG3_norm}
+
+model1.dag <- model2network("[Y17][AR18|Y17][Y18|AR18:Y17][Y19|Y17:AR18:Y18][AR20|Y19][Y20|AR20:Y19]")
+fit3 = bn.fit(model1.dag, combined_normalized[,c('Y17','AR18','Y18','Y19','AR20','Y20')])
+#fit3
+strength1 <- arc.strength(model1.dag, combined_normalized[,c('Y17','AR18','Y18','Y19','AR20','Y20')])
+strength.plot(model1.dag, strength1)
+
+```
+We can observe that there is a strong causal relationship between yield in 2017 and yield in 2018. There exists a strong relationship between yield in 2018 and yield in 2019 as well. Yield in 2019 also has a strong causal relationship with applied rate in 2020. Applied rate in 2020 also has a strong causal relationship with yield in 2020. There are weak causal relationships between yield in 2017 and yield in 2019, yield in 2019 and yield in 2020, applied rate in 2018 and yield in 2019 and applied rate in 2018 and yield in 2018. This was the case from before the normalization.
+
+## 12. Conclusion
+
+All DAGs indicated that there was a weak causal relationship between applied rate in 2018 and yield in 2018. We can therefore conclude that low yield in 2018 was not entirely caused by the seeding rate in 2018. We can conclude that low yield was because that part of the field was inherently bad.
+
+
+## 13. References
+
+Directed acyclic graphs: a tool for causal studies in paediatrics,Thomas C. Williams et.al. 2018, https://www.nature.com/articles/s41390-018-0071-3
+
+How to normalize and standardize data in R, Geeksforgeeks 2022, https://www.geeksforgeeks.org/how-to-normalize-and-standardize-data-in-r/
+
+
+
