@@ -1,6 +1,6 @@
 ---
 title: "Causal Inferences on Grain Yield and Seeding Rate for Corn and Soybeans"
-author: "Vivek Patel"
+author: "Evans Kayo"
 date: "2022-08-05"
 output: pdf_document
 ---
